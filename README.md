@@ -213,6 +213,8 @@ kubectl logs -n cluster-monitor deploy/cluster-monitor -f
 
 ---
 
-## License
+## photo
+<img width="1132" height="654" alt="image" src="https://github.com/user-attachments/assets/40436f78-e6f4-49ed-9363-47efaab6a8e6" />
 
-MIT
+
+
