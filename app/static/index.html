@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>K8s Cluster Monitor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3250;
+      --text: #e2e8f0;
+      --muted: #8892a4;
+      --error: #f87171;
+      --error-bg: #2d1a1a;
+      --error-border: #7f1d1d;
+      --warning: #fbbf24;
+      --warning-bg: #2d2510;
+      --warning-border: #78350f;
+      --info: #60a5fa;
+      --info-bg: #0f1e35;
+      --info-border: #1e3a5f;
+      --success: #34d399;
+      --accent: #6366f1;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #1e1b4b 0%, #1a1d27 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; }
+
+    .logo {
+      width: 36px; height: 36px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    h1 { font-size: 18px; font-weight: 700; color: #fff; }
+    .master-badge {
+      font-size: 11px; color: var(--muted);
+      background: var(--surface2);
+      padding: 2px 8px; border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    #last-check { font-size: 12px; color: var(--muted); }
+
+    .btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: none;
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    .spinner.active { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Main layout ── */
+    main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot-red { background: var(--error); box-shadow: 0 0 6px var(--error); }
+    .dot-yellow { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+    .dot-gray { background: var(--muted); }
+
+    /* ── Cards grid ── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+    .card-value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .val-green { color: var(--success); }
+    .val-red { color: var(--error); }
+    .val-yellow { color: var(--warning); }
+    .val-blue { color: var(--info); }
+    .val-white { color: #fff; }
+
+    /* ── Sections ── */
+    section { margin-bottom: 28px; }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title .badge {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* ── Nodes ── */
+    .nodes-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+    .node-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      min-width: 240px;
+      flex: 1;
+    }
+    .node-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .node-name { font-weight: 600; font-size: 14px; }
+    .node-role { font-size: 11px; color: var(--muted); background: var(--surface2); padding: 2px 7px; border-radius: 4px; border: 1px solid var(--border); }
+    .node-status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+    }
+    .badge-ready { background: rgba(52,211,153,0.12); color: var(--success); border: 1px solid rgba(52,211,153,0.25); }
+    .badge-notready { background: rgba(248,113,113,0.12); color: var(--error); border: 1px solid rgba(248,113,113,0.25); }
+    .node-conditions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .cond-chip {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .cond-chip.problem { color: var(--warning); border-color: var(--warning-border); background: var(--warning-bg); }
+    .node-resources { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+    /* ── Issue list ── */
+    .issue-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .issue-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .issue-item:hover { background: var(--surface2); border-color: var(--accent); }
+    .issue-item.error { border-left: 3px solid var(--error); }
+    .issue-item.warning { border-left: 3px solid var(--warning); }
+    .issue-item.info { border-left: 3px solid var(--info); }
+
+    .severity-icon {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .icon-error { background: var(--error-bg); color: var(--error); }
+    .icon-warning { background: var(--warning-bg); color: var(--warning); }
+    .icon-info { background: var(--info-bg); color: var(--info); }
+
+    .issue-content { flex: 1; min-width: 0; }
+    .issue-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .issue-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .sev-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+    .sev-error { background: var(--error-bg); color: var(--error); border: 1px solid var(--error-border); }
+    .sev-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+    .sev-info { background: var(--info-bg); color: var(--info); border: 1px solid var(--info-border); }
+
+    .issue-arrow { color: var(--muted); flex-shrink: 0; font-size: 16px; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--muted);
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+
+    /* ── Loading state ── */
+    .loading-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--muted);
+    }
+    .loading-spinner-lg {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+      overflow-y: auto;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 680px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .modal-icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .modal-title-block { flex: 1; }
+    .modal-title { font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .modal-meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+    .modal-meta span { display: flex; align-items: center; gap: 4px; }
+
+    .modal-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 20px; cursor: pointer; padding: 0 4px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .modal-close:hover { color: var(--text); }
+
+    .modal-body { padding: 20px 24px; }
+
+    .modal-section { margin-bottom: 20px; }
+    .modal-section:last-child { margin-bottom: 0; }
+    .modal-section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .modal-section p { font-size: 14px; line-height: 1.6; color: var(--text); }
+
+    .root-cause-block {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .solution-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 12.5px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #c9d1d9;
+    }
+    .solution-block .cmd { color: var(--success); }
+
+    .issue-desc-preview {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .modal-footer {
+      padding: 14px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    /* ── LLM badge ── */
+    .llm-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--surface2);
+    }
+    .llm-badge.active { color: var(--success); border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.05); }
+
+    /* ── Auto-refresh bar ── */
+    .refresh-bar {
+      height: 2px;
+      background: var(--accent);
+      transition: width linear;
+      border-radius: 1px;
+    }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">⎈</div>
+    <div>
+      <h1>K8s Cluster Monitor</h1>
+    </div>
+    <span class="master-badge">localhost</span>
+  </div>
+  <div class="header-right">
+    <span id="llm-badge" class="llm-badge">● LLM offline</span>
+    <div id="spinner" class="spinner"></div>
+    <span id="last-check">—</span>
+    <button id="refresh-btn" class="btn btn-primary" onclick="triggerCheck()">Refresh now</button>
+  </div>
+</header>
+
+<div style="height:2px; background:var(--surface2); overflow:hidden;">
+  <div id="refresh-bar" class="refresh-bar" style="width:0%"></div>
+</div>
+
+<main>
+  <!-- Status bar -->
+  <div id="status-bar" class="status-bar">
+    <span class="dot dot-gray"></span>
+    <span id="status-text">Connecting to cluster...</span>
+  </div>
+
+  <!-- Metric cards -->
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Nodes</div>
+      <div class="card-value val-white" id="m-nodes">—</div>
+      <div class="card-sub" id="m-nodes-sub">loading</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Running Pods</div>
+      <div class="card-value val-green" id="m-running">—</div>
+      <div class="card-sub" id="m-pods-sub">of — total</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Failed Pods</div>
+      <div class="card-value" id="m-failed" style="color:#fff">—</div>
+      <div class="card-sub" id="m-pending-sub">— pending</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Deployments</div>
+      <div class="card-value val-white" id="m-deployments">—</div>
+      <div class="card-sub" id="m-dep-sub">loading</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Issues</div>
+      <div class="card-value" id="m-issues" style="color:#fff">—</div>
+      <div class="card-sub" id="m-issues-sub">loading</div>
+    </div>
+  </div>
+
+  <!-- Nodes section -->
+  <section>
+    <div class="section-title">Nodes <span class="badge" id="nodes-count">0</span></div>
+    <div id="nodes-container" class="nodes-grid">
+      <div class="loading-state"><div class="loading-spinner-lg"></div><div>Loading node info...</div></div>
+    </div>
+  </section>
+
+  <!-- Issues section -->
+  <section>
+    <div class="section-title">Issues <span class="badge" id="issues-count">0</span></div>
+    <div id="issues-container">
+      <div class="loading-state">
+        <div class="loading-spinner-lg"></div>
+        <div>Running initial cluster check...</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Auto-refreshes every 5 minutes &nbsp;·&nbsp; K8s Cluster Monitor powered by Ollama
+</footer>
+
+<!-- Modal -->
+<div id="modal-overlay" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div id="modal-icon" class="modal-icon"></div>
+      <div class="modal-title-block">
+        <div id="modal-title" class="modal-title"></div>
+        <div class="modal-meta">
+          <span id="modal-sev"></span>
+          <span id="modal-ns"></span>
+          <span id="modal-res"></span>
+          <span id="modal-time"></span>
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="modal-section-label">Root Cause Analysis</div>
+        <div id="modal-desc" class="root-cause-block"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-label">How to fix it</div>
+        <div id="modal-solution" class="solution-block"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const CHECK_INTERVAL = 300; // seconds, must match backend
+  let progressTimer = null;
+  let progressStart = null;
+  let currentData = null;
+
+  // ── Fetch & render ──────────────────────────────────────────────────────────
+
+  async function fetchStatus() {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  async function triggerCheck() {
+    const btn = document.getElementById('refresh-btn');
+    btn.disabled = true;
+    showSpinner(true);
+    try {
+      const res = await fetch('/api/check', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || 'Check failed');
+        return;
+      }
+      const data = await res.json();
+      render(data.status);
+      resetProgressBar();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      showSpinner(false);
+    }
+  }
+
+  function showSpinner(on) {
+    document.getElementById('spinner').classList.toggle('active', on);
+  }
+
+  async function poll() {
+    try {
+      const data = await fetchStatus();
+      showSpinner(data.checking || false);
+
+      if (!data.ready) {
+        document.getElementById('status-text').textContent = data.message || 'Checking...';
+        return;
+      }
+
+      render(data.status);
+    } catch (e) {
+      console.error('Poll error', e);
+      setStatusBar('error', 'Cannot reach monitoring service');
+    }
+  }
+
+  function render(status) {
+    currentData = status;
+    renderStatusBar(status);
+    renderMetrics(status);
+    renderNodes(status.nodes || []);
+    renderIssues(status.issues || []);
+    renderLLMBadge(status.llm_available);
+
+    const ts = new Date(status.timestamp);
+    document.getElementById('last-check').textContent = 'Last check: ' + ts.toLocaleTimeString();
+  }
+
+  // ── Status bar ─────────────────────────────────────────────────────────────
+
+  function setStatusBar(level, text) {
+    const bar = document.getElementById('status-bar');
+    const dot = bar.querySelector('.dot');
+    document.getElementById('status-text').textContent = text;
+    dot.className = 'dot ' + ({ ok: 'dot-green', warning: 'dot-yellow', error: 'dot-red' }[level] || 'dot-gray');
+  }
+
+  function renderStatusBar(status) {
+    if (status.error) { setStatusBar('error', 'Error: ' + status.error); return; }
+    const issues = status.issues || [];
+    const errors = issues.filter(i => i.severity === 'error').length;
+    const warns = issues.filter(i => i.severity === 'warning').length;
+    if (errors > 0) {
+      setStatusBar('error', errors + ' critical error(s) detected — immediate attention required');
+    } else if (warns > 0) {
+      setStatusBar('warning', warns + ' warning(s) detected — review recommended');
+    } else {
+      setStatusBar('ok', 'Cluster is healthy — no issues detected');
+    }
+  }
+
+  // ── Metrics ────────────────────────────────────────────────────────────────
+
+  function renderMetrics(s) {
+    const nodeCount = (s.nodes || []).length;
+    const readyNodes = (s.nodes || []).filter(n => n.status === 'Ready').length;
+    document.getElementById('m-nodes').textContent = nodeCount;
+    document.getElementById('m-nodes-sub').textContent = readyNodes + ' Ready';
+    document.getElementById('m-nodes').className = 'card-value ' + (readyNodes === nodeCount ? 'val-green' : 'val-red');
+
+    document.getElementById('m-running').textContent = s.running_pods ?? '—';
+    document.getElementById('m-pods-sub').textContent = 'of ' + (s.total_pods ?? '—') + ' total';
+
+    const failed = s.failed_pods ?? 0;
+    const mFailed = document.getElementById('m-failed');
+    mFailed.textContent = failed;
+    mFailed.className = 'card-value ' + (failed > 0 ? 'val-red' : 'val-green');
+    document.getElementById('m-pending-sub').textContent = (s.pending_pods ?? 0) + ' pending';
+
+    document.getElementById('m-deployments').textContent = s.healthy_deployments + '/' + s.total_deployments;
+    const depOk = s.healthy_deployments === s.total_deployments;
+    document.getElementById('m-deployments').className = 'card-value ' + (depOk ? 'val-green' : 'val-yellow');
+    document.getElementById('m-dep-sub').textContent = depOk ? 'all healthy' : 'some degraded';
+
+    const issues = s.issues || [];
+    const issueEl = document.getElementById('m-issues');
+    issueEl.textContent = issues.length;
+    const errors = issues.filter(i => i.severity === 'error').length;
+    const warns = issues.filter(i => i.severity === 'warning').length;
+    issueEl.className = 'card-value ' + (errors > 0 ? 'val-red' : warns > 0 ? 'val-yellow' : 'val-green');
+    document.getElementById('m-issues-sub').textContent =
+      errors + ' errors, ' + warns + ' warnings';
+
+    document.getElementById('issues-count').textContent = issues.length;
+  }
+
+  // ── Nodes ──────────────────────────────────────────────────────────────────
+
+  function renderNodes(nodes) {
+    document.getElementById('nodes-count').textContent = nodes.length;
+    const container = document.getElementById('nodes-container');
+    if (!nodes.length) { container.innerHTML = '<div class="loading-state"><div>No node data</div></div>'; return; }
+
+    container.innerHTML = nodes.map(n => {
+      const ready = n.status === 'Ready';
+      const roles = n.roles.join(', ');
+      const badgeClass = ready ? 'badge-ready' : 'badge-notready';
+      const badgeDot = ready ? '●' : '●';
+      const badgeText = ready ? 'Ready' : 'NotReady';
+
+      const problemConds = Object.entries(n.conditions)
+        .filter(([k, v]) => ['MemoryPressure','DiskPressure','PIDPressure','NetworkUnavailable'].includes(k) && v === 'True');
+
+      const allConds = Object.entries(n.conditions)
+        .filter(([k]) => k !== 'Ready')
+        .map(([k, v]) => {
+          const isProblem = problemConds.some(([pk]) => pk === k);
+          return `<span class="cond-chip ${isProblem ? 'problem' : ''}">${k}: ${v === 'True' ? '✓' : '✗'}</span>`;
+        }).join('');
+
+      const cpu = n.allocatable.cpu || '?';
+      const mem = n.allocatable.memory || '?';
+
+      return `
+        <div class="node-card">
+          <div class="node-header">
+            <div>
+              <div class="node-name">${n.name}</div>
+              <span class="node-role">${roles}</span>
+            </div>
+            <span class="node-status-badge ${badgeClass}">${badgeDot} ${badgeText}</span>
+          </div>
+          ${allConds ? `<div class="node-conditions">${allConds}</div>` : ''}
+          <div class="node-resources">CPU: ${cpu} &nbsp;·&nbsp; Memory: ${mem}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── Issues ─────────────────────────────────────────────────────────────────
+
+  const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
+  const SEVERITY_ICON = { error: '✖', warning: '⚠', info: 'ℹ' };
+  const SEVERITY_LABEL = { error: 'Error', warning: 'Warning', info: 'Info' };
+
+  function renderIssues(issues) {
+    const container = document.getElementById('issues-container');
+    if (!issues.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">✓</div>
+          <div class="empty-title">No issues detected</div>
+          <div>Your cluster appears healthy</div>
+        </div>`;
+      return;
+    }
+
+    const sorted = [...issues].sort((a, b) => (SEVERITY_ORDER[a.severity] || 99) - (SEVERITY_ORDER[b.severity] || 99));
+
+    container.innerHTML = '<div class="issue-list">' + sorted.map((issue, idx) => {
+      const meta = [
+        issue.namespace ? '📦 ' + issue.namespace : '',
+        issue.resource ? '🔧 ' + issue.resource : '',
+      ].filter(Boolean).join('  ');
+
+      const descPreview = issue.description
+        ? escHtml(issue.description.slice(0, 120)) + (issue.description.length > 120 ? '…' : '')
+        : '';
+
+      return `
+        <div class="issue-item ${issue.severity}" onclick="openModal(${idx})">
+          <div class="severity-icon icon-${issue.severity}">${SEVERITY_ICON[issue.severity] || '?'}</div>
+          <div class="issue-content">
+            <div class="issue-title">${escHtml(issue.title)}</div>
+            ${descPreview ? `<div class="issue-desc-preview">${descPreview}</div>` : ''}
+            ${meta ? `<div class="issue-meta">${escHtml(meta)}</div>` : ''}
+          </div>
+          <span class="sev-badge sev-${issue.severity}">${SEVERITY_LABEL[issue.severity]}</span>
+          <span class="issue-arrow">›</span>
+        </div>`;
+    }).join('') + '</div>';
+
+    // Store sorted for modal access
+    window._sortedIssues = sorted;
+  }
+
+  // ── Modal ──────────────────────────────────────────────────────────────────
+
+  function openModal(idx) {
+    const issues = window._sortedIssues || (currentData && currentData.issues) || [];
+    const issue = issues[idx];
+    if (!issue) return;
+
+    document.getElementById('modal-icon').className = 'modal-icon icon-' + issue.severity;
+    document.getElementById('modal-icon').textContent = SEVERITY_ICON[issue.severity];
+    document.getElementById('modal-title').textContent = issue.title;
+
+    const sevEl = document.getElementById('modal-sev');
+    sevEl.innerHTML = `<span class="sev-badge sev-${issue.severity}">${SEVERITY_LABEL[issue.severity]}</span>`;
+
+    document.getElementById('modal-ns').textContent = issue.namespace ? '📦 ' + issue.namespace : '';
+    document.getElementById('modal-res').textContent = issue.resource ? '🔧 ' + issue.resource : '';
+
+    const ts = issue.timestamp ? new Date(issue.timestamp).toLocaleString() : '';
+    document.getElementById('modal-time').textContent = ts ? '🕐 ' + ts : '';
+
+    document.getElementById('modal-desc').textContent = issue.description || 'No root cause analysis available.';
+    document.getElementById('modal-solution').textContent = issue.solution || 'No solution provided.';
+
+    document.getElementById('modal-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal(event) {
+    if (event && event.target !== document.getElementById('modal-overlay')) return;
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  // ── LLM Badge ──────────────────────────────────────────────────────────────
+
+  function renderLLMBadge(available) {
+    const el = document.getElementById('llm-badge');
+    if (available) {
+      el.className = 'llm-badge active';
+      el.textContent = '● LLM active';
+    } else {
+      el.className = 'llm-badge';
+      el.textContent = '● LLM offline';
+    }
+  }
+
+  // ── Progress bar ───────────────────────────────────────────────────────────
+
+  function resetProgressBar() {
+    clearInterval(progressTimer);
+    progressStart = Date.now();
+    const bar = document.getElementById('refresh-bar');
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    setTimeout(() => {
+      bar.style.transition = `width ${CHECK_INTERVAL}s linear`;
+      bar.style.width = '100%';
+    }, 50);
+  }
+
+  // ── Utilities ──────────────────────────────────────────────────────────────
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  (async function init() {
+    await poll();
+    resetProgressBar();
+    setInterval(poll, 15000); // poll every 15s for checking state
+  })();
+</script>
+</body>
+</html>

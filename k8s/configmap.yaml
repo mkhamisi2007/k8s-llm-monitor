@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitor-config
+  namespace: cluster-monitor
+data:
+  OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+  OLLAMA_MODEL: "llama3.2:1b"
+  MASTER_NODE_IP: "localhost"
+  NODE_COUNT: "1"
+  CHECK_INTERVAL_SECONDS: "300"
+  HISTORY_SIZE: "48"

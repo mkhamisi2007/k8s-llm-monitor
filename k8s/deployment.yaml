@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-monitor
+  namespace: cluster-monitor
+  labels:
+    app: cluster-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-monitor
+  template:
+    metadata:
+      labels:
+        app: cluster-monitor
+    spec:
+      serviceAccountName: cluster-monitor
+      containers:
+        - name: monitor
+          image: mkhamisi2007/cluster-monitor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: cluster-monitor-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+      restartPolicy: Always
